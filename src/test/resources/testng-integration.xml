@@ -1,0 +1,7 @@
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+<suite name="Integration" parallel="methods" thread-count="2">
+  <test name="Integration">
+    <groups><run><include name="integration"/></run></groups>
+    <packages><package name="org.example.tests.integration"/></packages>
+  </test>
+</suite>

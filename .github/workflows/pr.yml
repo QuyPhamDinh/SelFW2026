@@ -1,0 +1,23 @@
+name: Pull Request Tests
+
+on:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: mvn -B test -Denv=ci -Dheadless=true -Dcucumber.filter.tags="@smoke or @api"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: |
+            target/cucumber-report.*
+            target/allure-results/
