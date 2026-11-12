@@ -81,9 +81,9 @@ mvn -B test -Denv=ci -Dheadless=true -Dcucumber.filter.tags="@ui"
 
 Create a Pipeline job pointing at this GitHub repository and use the repository `Jenkinsfile`. The Jenkins agent requires only Docker CLI/daemon access and Docker Compose v2; it does not require Java or Maven. Docker Desktop must be running for the Jenkins host user on macOS. Linux agents need permission to access the Docker daemon. Unix shell steps are used, so a Linux Jenkins agent is recommended.
 
-The pipeline checks out the source, verifies Docker, builds the test-runner image, starts Selenium with `docker compose up -d --wait`, executes Maven inside the container, archives Surefire/Cucumber/Allure/screenshots/logs, and runs `docker compose down --remove-orphans` in `post { always { ... } }`. `disableConcurrentBuilds()` and a build-specific `COMPOSE_PROJECT_NAME` isolate Jenkins builds.
+Install the Jenkins **Allure** plugin before running the job: **Manage Jenkins → Plugins → Available plugins → Allure**. Then configure an Allure Commandline installation under **Manage Jenkins → Tools → Allure Commandline installations** (for example, name it `allure`). The pipeline checks out the source, verifies Docker, builds the test-runner image, starts Selenium with `docker compose up -d --wait`, executes Maven inside the container, publishes the generated Allure report, archives Surefire/Cucumber/Allure/screenshots/logs, and runs `docker compose down --remove-orphans` in `post { always { ... } }`. `disableConcurrentBuilds()` and a build-specific `COMPOSE_PROJECT_NAME` isolate Jenkins builds.
 
-The pipeline uses `junit` and `archiveArtifacts`, so it does not require the Allure Jenkins plugin. If that optional plugin is installed, the archived `allure-results/` directory can be published through Jenkins configuration without changing test execution.
+After a successful build, open the build page and select **Allure Report** in the left-side build menu. The raw results remain available under **Build Artifacts → allure-results**. The `allure` publisher requires the Jenkins Allure plugin; without it, Jenkins will report `No such DSL method 'allure'`.
 
 ## Configuration
 

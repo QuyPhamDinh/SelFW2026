@@ -72,6 +72,11 @@ pipeline {
         stage('Publish Reports') {
             steps {
                 junit allowEmptyResults: true, testResults: 'target/surefire-reports/**/*.xml'
+                allure([
+                    includeProperties: false,
+                    jdk: '',
+                    results: [[path: 'allure-results']]
+                ])
                 archiveArtifacts allowEmptyArchive: true,
                     artifacts: 'target/cucumber-report.*,target/screenshots/**/*,target/selenium.log,allure-results/**/*,target/allure-results/**/*',
                     fingerprint: true
