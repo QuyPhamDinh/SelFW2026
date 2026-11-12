@@ -1,10 +1,5 @@
 target/
 allure-results/
-.terraform/
-terraform/terraform.tfstate
-terraform/terraform.tfstate.*
-terraform/crash.log
-terraform/*.tfplan
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/

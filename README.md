@@ -1,80 +1,92 @@
 # SelFW2026
 
-Reusable UI, API, and integration test automation framework built with Java 21, Selenium 4, Cucumber, TestNG, and Rest Assured.
+Portable UI and API automation framework built with Java 23, Selenium, Cucumber, TestNG, REST Assured, Docker Compose, and Jenkins.
 
 ## Architecture
 
-Reusable implementation lives in `src/main/java/com/company/framework`:
+Docker Compose manages two services:
 
-- `core`: environment configuration, token caching, data factories, utilities, and diagnostics
-- `api`: shared Rest Assured specifications, typed models, and clients
-- `ui`: thread-safe driver factory/manager and page abstractions
-- `integration`: DB, queue, and stub-server contracts ready for system-specific adapters
+- `selenium`: pinned, multi-architecture Selenium Standalone Chromium with a readiness healthcheck.
+- `test-runner`: the existing Maven/Cucumber/TestNG project in a Java 23 image.
 
-Tests and business-facing scenarios remain in `src/test`. Cucumber is the primary BDD layer, while TestNG suite XML files support focused smoke, API, integration, and UI regression runs.
+The runner connects to `http://selenium:4444` through the Compose service network. Java and Maven are not required on the host. Local direct execution remains available when developers want ChromeDriver from IntelliJ.
 
-## Run locally
+The Maven project targets Java 21 bytecode and runs on Java 23 in the container. The entrypoint applies `-XX:UseSVE=0` only on ARM64 because the selected Java 23 ARM runtime requires that compatibility setting on Apple Silicon Docker Desktop.
 
-Install Java 21 and Maven, then run all scenarios:
+## Prerequisites
+
+- Docker Desktop or Docker Engine with Docker Compose v2
+- Git
+
+Java, Maven, Terraform, and a locally installed browser are not required for Docker execution. Windows is supported through Docker Desktop Linux containers; native Windows containers are not supported.
+
+## Local Docker execution
+
+Run the complete suite and retain reports:
 
 ```bash
-mvn test -Denv=dev
+mkdir -p target allure-results
+chmod -R a+rwX target allure-results
+docker compose build test-runner
+docker compose up -d --wait selenium
+docker compose run --rm --no-deps test-runner
+docker compose down --remove-orphans
 ```
 
-Run only tagged scenarios or override configuration without changing source:
+The final `down` command should be run even after a test failure. A portable shell variant that always cleans up is:
 
 ```bash
-mvn test -Denv=ci -Dcucumber.filter.tags="@ui" -Dbrowser=firefox -Dheadless=true
-mvn test -Denv=staging -Dcucumber.filter.tags="@api" -Dapi.base.url=https://jsonplaceholder.typicode.com
+docker compose build test-runner
+docker compose up -d --wait selenium
+docker compose run --rm --no-deps test-runner; status=$?
+docker compose logs selenium > target/selenium.log 2>&1 || true
+docker compose down --remove-orphans
+exit $status
 ```
 
-Supported configuration keys are in `src/test/resources/config.properties`. Environment variables use uppercase names with dots replaced by underscores, for example `API_BASE_URL`. Set `remote.url` to run against Selenium Grid or another remote WebDriver endpoint.
-
-Reports are generated in `target/cucumber-report.html`, `target/cucumber-report.json`, and `target/allure-results`. UI scenarios use a thread-local WebDriver and API scenarios use scenario-local response state, making the runner ready for parallel execution. GitHub Actions workflows are provided for pull requests, main branch pushes, and nightly execution.
-
-## Remote Selenium with Docker and Terraform
-
-The repository includes a Terraform-managed Selenium Standalone Chromium container. The pinned image is multi-architecture and supports Apple Silicon (`linux/arm64`) as well as `amd64`.
-
-Prerequisites:
-
-- Java 21 and Maven
-- Docker Desktop
-- Terraform 1.5+
-
-Start Selenium Grid:
+Run focused suites:
 
 ```bash
-terraform -chdir=terraform init
-terraform -chdir=terraform validate
-terraform -chdir=terraform apply -auto-approve
+docker compose run --rm --no-deps test-runner \
+  -B test -Denv=ci -Dheadless=true -Dcucumber.filter.tags="@ui"
+
+docker compose run --rm --no-deps test-runner \
+  -B test -Denv=ci -Dcucumber.filter.tags="@api"
 ```
 
-Run UI tests against the Grid:
+Reports are written to `target/` and `allure-results/`:
+
+- Surefire/TestNG XML: `target/surefire-reports/`
+- Cucumber HTML/JSON: `target/cucumber-report.html`, `target/cucumber-report.json`
+- Failure screenshots: `target/screenshots/`
+- Allure raw results: `allure-results/`
+- Selenium logs: `target/selenium.log`
+
+Compose exposes Selenium at `http://localhost:4444` for diagnostics. Tests must use the service hostname `http://selenium:4444` inside the Compose network.
+
+On Windows PowerShell, use the same Compose commands and omit the Unix `mkdir`/`chmod` commands; Docker creates the bind-mounted directories as needed.
+
+## Local execution without Docker
+
+When Java 21+ and Maven are installed, run the existing local-driver path:
 
 ```bash
-SELENIUM_REMOTE_URL=http://localhost:4444 \
+mvn -B test -Denv=dev
 mvn -B test -Denv=ci -Dheadless=true -Dcucumber.filter.tags="@ui"
 ```
 
-Run API-only tests without requiring Selenium:
-
-```bash
-mvn -B test -Denv=ci -Dcucumber.filter.tags="@api"
-```
-
-Always remove the local container when finished:
-
-```bash
-terraform -chdir=terraform destroy -auto-approve
-```
-
-`SELENIUM_REMOTE_URL` takes precedence over `remote.url` and enables `RemoteWebDriver`; when it is absent, `DriverFactory` starts a local ChromeDriver or FirefoxDriver. The Selenium container maps Grid port `4444` and receives 2 GB shared memory.
+`SELENIUM_REMOTE_URL` takes precedence over `remote.url`. If neither is configured, `DriverFactory` starts local ChromeDriver or FirefoxDriver. For Compose execution, `SELENIUM_REMOTE_URL=http://selenium:4444` selects `RemoteWebDriver`. `DriverManager` remains thread-local, and Cucumber hooks capture failed UI screenshots before quitting each session.
 
 ## Jenkins
 
-Create a Pipeline job pointing at this GitHub repository and use the repository `Jenkinsfile`. The job requires Pipeline, Git, JUnit, and Docker Pipeline plugins. The optional Allure Jenkins plugin publishes the generated Allure results. The Jenkins agent must have Java 21, Maven, Docker Desktop/Engine, Terraform, and `curl` available on `PATH`.
+Create a Pipeline job pointing at this GitHub repository and use the repository `Jenkinsfile`. The Jenkins agent requires only Docker CLI/daemon access and Docker Compose v2; it does not require Java or Maven. Docker Desktop must be running for the Jenkins host user on macOS. Linux agents need permission to access the Docker daemon. Unix shell steps are used, so a Linux Jenkins agent is recommended.
 
-The pipeline checks out the source, validates and applies Terraform, waits for `/status` to report readiness, runs smoke, API, and UI-tagged tests, publishes JUnit/Cucumber/screenshots/Allure artifacts, and destroys the Terraform-managed container in `post { always { ... } }`. Concurrent builds are disabled so local Docker resources cannot collide.
+The pipeline checks out the source, verifies Docker, builds the test-runner image, starts Selenium with `docker compose up -d --wait`, executes Maven inside the container, archives Surefire/Cucumber/Allure/screenshots/logs, and runs `docker compose down --remove-orphans` in `post { always { ... } }`. `disableConcurrentBuilds()` and a build-specific `COMPOSE_PROJECT_NAME` isolate Jenkins builds.
 
-For focused local runs, the existing TestNG XML files remain available under `src/test/resources`; the Cucumber TestNG runner is the Maven test entry point and uses `cucumber.filter.tags` for the CI stage boundaries.
+The pipeline uses `junit` and `archiveArtifacts`, so it does not require the Allure Jenkins plugin. If that optional plugin is installed, the archived `allure-results/` directory can be published through Jenkins configuration without changing test execution.
+
+## Configuration
+
+Environment files are under `src/test/resources/config/`. System properties and environment variables override them; for example, `API_BASE_URL` overrides `api.base.url`. Select Cucumber scenarios with `-Dcucumber.filter.tags`.
+
+Generated build output and Allure results are ignored by `.gitignore`. No Terraform configuration or Terraform commands are part of the active project.

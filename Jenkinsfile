@@ -9,12 +9,8 @@ pipeline {
     }
 
     environment {
-        PATH = "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Applications/Docker.app/Contents/Resources/bin:${env.PATH}"
+        COMPOSE_PROJECT_NAME = "selfw-${env.BUILD_NUMBER}"
         TEST_ENV = 'ci'
-        SELENIUM_REMOTE_URL = 'http://localhost:4444'
-        TF_IN_AUTOMATION = 'true'
-        TF_INPUT = 'false'
-        SELENIUM_PORT = '4444'
     }
 
     stages {
@@ -24,107 +20,67 @@ pipeline {
             }
         }
 
-        stage('Verify Prerequisites') {
+        stage('Verify Docker Access') {
             steps {
                 sh '''
                     set -eu
-                    java -version
-                    mvn -version
                     docker version
-                    terraform version
+                    docker compose version
+                    docker info >/dev/null
                 '''
             }
         }
 
-        stage('Validate Terraform') {
+        stage('Build Test Environment') {
             steps {
                 sh '''
                     set -eu
-                    terraform -chdir=terraform init -backend=false -input=false
-                    terraform -chdir=terraform fmt -check
-                    terraform -chdir=terraform validate
+                    mkdir -p target allure-results
+                    chmod -R a+rwX target allure-results
+                    docker compose build test-runner
+                    docker compose run --rm --no-deps --entrypoint java test-runner -version
+                    docker compose run --rm --no-deps --entrypoint mvn test-runner -version
                 '''
             }
         }
 
-        stage('Provision Infrastructure') {
+        stage('Start Selenium Grid') {
             steps {
-                script {
-                    env.TF_CONTAINER_NAME = "selfw-selenium-${env.BUILD_NUMBER}"
+                sh 'docker compose up -d --wait selenium'
+            }
+        }
+
+        stage('Execute Maven Tests') {
+            steps {
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    sh 'docker compose run --rm --no-deps test-runner'
                 }
+            }
+        }
+
+        stage('Collect Reports') {
+            steps {
                 sh '''
-                    set -eu
-                    terraform -chdir=terraform apply -auto-approve -input=false \
-                      -var="container_name=${TF_CONTAINER_NAME}" \
-                      -var="host_port=${SELENIUM_PORT}"
+                    set +e
+                    docker compose logs selenium > target/selenium.log 2>&1
+                    exit 0
                 '''
-            }
-        }
-
-        stage('Wait for Selenium Grid') {
-            steps {
-                sh '''
-                    set -eu
-                    for attempt in $(seq 1 60); do
-                      if curl --fail --silent "${SELENIUM_REMOTE_URL}/status" | grep -Eq '"ready"[[:space:]]*:[[:space:]]*true'; then
-                        exit 0
-                      fi
-                      sleep 2
-                    done
-                    echo "Selenium Grid did not become ready in time" >&2
-                    exit 1
-                '''
-            }
-        }
-
-        stage('Execute Smoke Tests') {
-            steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    sh 'mvn -B test -Denv=ci -Dheadless=true -Dcucumber.filter.tags="@smoke"'
-                }
-            }
-        }
-
-        stage('Execute API Tests') {
-            steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    sh 'mvn -B test -Denv=ci -Dcucumber.filter.tags="@api"'
-                }
-            }
-        }
-
-        stage('Execute UI Regression Tests') {
-            steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    sh 'mvn -B test -Denv=ci -Dheadless=true -Dcucumber.filter.tags="@ui"'
-                }
             }
         }
 
         stage('Publish Reports') {
             steps {
                 junit allowEmptyResults: true, testResults: 'target/surefire-reports/**/*.xml'
-                archiveArtifacts allowEmptyArchive: true, artifacts: 'target/cucumber-report.*,target/screenshots/**/*,allure-results/**/*,target/allure-results/**/*', fingerprint: true
-                script {
-                    if (fileExists('allure-results')) {
-                        allure includeProperties: false, jdk: '', results: [[path: 'allure-results']]
-                    } else if (fileExists('target/allure-results')) {
-                        allure includeProperties: false, jdk: '', results: [[path: 'target/allure-results']]
-                    }
-                }
+                archiveArtifacts allowEmptyArchive: true,
+                    artifacts: 'target/cucumber-report.*,target/screenshots/**/*,target/selenium.log,allure-results/**/*,target/allure-results/**/*',
+                    fingerprint: true
             }
         }
     }
 
     post {
         always {
-            sh '''
-                if [ -f terraform/terraform.tfstate ]; then
-                  terraform -chdir=terraform destroy -auto-approve -input=false \
-                    -var="container_name=${TF_CONTAINER_NAME:-selfw-selenium-${BUILD_NUMBER}}" \
-                    -var="host_port=${SELENIUM_PORT}"
-                fi
-            '''
+            sh 'docker compose down --remove-orphans'
         }
     }
 }
