@@ -9,6 +9,7 @@ pipeline {
     }
 
     environment {
+        PATH = "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/Applications/Docker.app/Contents/Resources/bin:${env.PATH}"
         COMPOSE_PROJECT_NAME = "selfw-${env.BUILD_NUMBER}"
         TEST_ENV = 'ci'
     }
@@ -24,8 +25,9 @@ pipeline {
             steps {
                 sh '''
                     set -eu
-                    docker version
+                    command -v docker
                     docker compose version
+                    docker version
                     docker info >/dev/null
                 '''
             }
