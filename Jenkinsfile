@@ -9,6 +9,7 @@ pipeline {
     }
 
     environment {
+        PATH = "/opt/homebrew/bin:/opt/homebrew/sbin:${env.PATH}"
         TEST_ENV = 'ci'
         SELENIUM_REMOTE_URL = 'http://localhost:4444'
         TF_IN_AUTOMATION = 'true'
