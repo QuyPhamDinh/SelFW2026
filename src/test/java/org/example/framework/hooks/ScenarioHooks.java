@@ -11,12 +11,16 @@ import org.openqa.selenium.TakesScreenshot;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.UUID;
 
 public class ScenarioHooks {
     @Before("@ui")
     public void startBrowser() {
         DriverManager.set(DriverFactory.create());
+        DriverManager.get().manage().timeouts()
+                .pageLoadTimeout(Duration.ofSeconds(30))
+                .scriptTimeout(Duration.ofSeconds(15));
         DriverManager.get().manage().window().maximize();
     }
 

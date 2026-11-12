@@ -1,0 +1,131 @@
+name: Scheduled Smoke Monitoring
+
+on:
+  schedule:
+    # GitHub schedules are best-effort; this avoids the busiest top-of-hour minute.
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-smoke-monitoring
+  cancel-in-progress: false
+
+jobs:
+  smoke-monitoring:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Docker
+        run: |
+          set -eu
+          docker version
+          docker compose version
+          docker info >/dev/null
+
+      - name: Prepare report directories
+        run: |
+          set -eu
+          mkdir -p target allure-results
+          chmod -R a+rwX target allure-results
+
+      - name: Build test-runner image
+        run: docker compose build test-runner
+
+      - name: Start Selenium Grid and wait for readiness
+        run: |
+          set -eu
+          docker compose up -d selenium
+          for attempt in $(seq 1 36); do
+            if curl --fail --silent http://localhost:4444/status \
+                | grep -Eq '"ready"[[:space:]]*:[[:space:]]*true'; then
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose ps
+          exit 1
+
+      - name: Execute API smoke tests
+        id: api
+        continue-on-error: true
+        run: |
+          set +e
+          docker compose run --rm --no-deps test-runner \
+            -B test -Denv=ci -Dheadless=true \
+            '-Dcucumber.filter.tags=@api and @smoke'
+          status=$?
+          mkdir -p target/smoke-api
+          cp -a target/surefire-reports target/smoke-api/ 2>/dev/null || true
+          cp -a target/cucumber-report.* target/smoke-api/ 2>/dev/null || true
+          cp -a target/screenshots target/smoke-api/ 2>/dev/null || true
+          cp -a allure-results target/smoke-api/ 2>/dev/null || true
+          if [ "$status" -ne 0 ] || [ ! -s target/smoke-api/cucumber-report.json ] \
+              || ! grep -q '"steps"' target/smoke-api/cucumber-report.json; then
+            exit 1
+          fi
+
+      - name: Execute UI smoke tests
+        id: ui
+        if: always()
+        continue-on-error: true
+        run: |
+          set +e
+          docker compose run --rm --no-deps test-runner \
+            -B test -Denv=ci -Dheadless=true \
+            '-Dcucumber.filter.tags=@ui and @smoke'
+          status=$?
+          mkdir -p target/smoke-ui
+          cp -a target/surefire-reports target/smoke-ui/ 2>/dev/null || true
+          cp -a target/cucumber-report.* target/smoke-ui/ 2>/dev/null || true
+          cp -a target/screenshots target/smoke-ui/ 2>/dev/null || true
+          cp -a allure-results target/smoke-ui/ 2>/dev/null || true
+          if [ "$status" -ne 0 ] || [ ! -s target/smoke-ui/cucumber-report.json ] \
+              || ! grep -q '"steps"' target/smoke-ui/cucumber-report.json; then
+            exit 1
+          fi
+
+      - name: Collect Docker logs
+        if: always()
+        run: |
+          mkdir -p target/docker-logs
+          docker compose ps > target/docker-logs/compose-ps.txt 2>&1 || true
+          docker compose logs --no-color > target/docker-logs/compose.log 2>&1 || true
+
+      - name: Upload smoke reports and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scheduled-smoke-monitoring-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            target/smoke-api/surefire-reports/**/*.xml
+            target/smoke-api/cucumber-report.*
+            target/smoke-api/allure-results/**
+            target/smoke-api/screenshots/**
+            target/smoke-ui/surefire-reports/**/*.xml
+            target/smoke-ui/cucumber-report.*
+            target/smoke-ui/allure-results/**
+            target/smoke-ui/screenshots/**
+            allure-results/**
+            target/docker-logs/**
+
+      - name: Assert both smoke suites passed
+        if: always()
+        run: |
+          if [ "${{ steps.api.outcome }}" != "success" ] \
+              || [ "${{ steps.ui.outcome }}" != "success" ]; then
+            echo "API outcome: ${{ steps.api.outcome }}"
+            echo "UI outcome: ${{ steps.ui.outcome }}"
+            exit 1
+          fi
+
+      - name: Clean up Docker resources
+        if: always()
+        run: docker compose down --remove-orphans --volumes

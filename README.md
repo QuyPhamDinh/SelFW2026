@@ -62,6 +62,38 @@ Reports are written to `target/` and `allure-results/`:
 - Allure raw results: `allure-results/`
 - Selenium logs: `target/selenium.log`
 
+## Scheduled synthetic monitoring
+
+`.github/workflows/scheduled-smoke-monitoring.yml` runs the existing Cucumber smoke
+scenarios (`@api and @smoke`, then `@ui and @smoke`) every 15 minutes at minutes
+7, 22, 37, and 52. It can also be started manually from the repository's
+**Actions → Scheduled Smoke Monitoring → Run workflow** menu. The workflow runs
+Java, Maven, and Chromium entirely in Docker, waits for Selenium readiness,
+uploads Surefire/TestNG, Cucumber, Allure, screenshots, and Docker logs, and
+always removes Compose resources. API and UI failures both fail the workflow;
+full regression suites are not included.
+
+GitHub scheduling is best-effort and may not start at the exact cron minute.
+The schedule can be changed or disabled by editing or disabling this workflow.
+Keep the smoke run lightweight because each execution consumes GitHub-hosted
+runner minutes. Local Docker validation measured approximately 14 seconds for
+the two Maven smoke commands; hosted duration will also include checkout,
+image-build, and runner startup overhead. As a planning estimate, multiply the
+measured workflow duration by four executions per hour (about 96 per day);
+verify actual usage in **Settings → Billing and plans → Actions**.
+
+### GitHub failure email notifications
+
+The workflow does not send email itself. To enable GitHub's built-in notifications,
+open **GitHub Settings → Notifications**, locate the **Actions** preferences,
+enable email notifications for failed workflow runs, select failure-only
+notifications where that option is available, and verify that the account receives
+the messages. A workflow cannot change a user's personal notification settings
+automatically. For scheduled workflows, recipients also depend on GitHub's
+scheduling rules and the user associated with the schedule.
+
+No SMTP server, SendGrid, Gmail API, or other external email service is used.
+
 Compose exposes Selenium at `http://localhost:4444` for diagnostics. Tests must use the service hostname `http://selenium:4444` inside the Compose network.
 
 On Windows PowerShell, use the same Compose commands and omit the Unix `mkdir`/`chmod` commands; Docker creates the bind-mounted directories as needed.
