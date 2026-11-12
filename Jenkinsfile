@@ -40,8 +40,7 @@ pipeline {
                     mkdir -p target allure-results
                     chmod -R a+rwX target allure-results
                     docker compose build test-runner
-                    docker compose run --rm --no-deps --entrypoint java test-runner -version
-                    docker compose run --rm --no-deps --entrypoint mvn test-runner -version
+                    docker compose run --rm --no-deps test-runner -version
                 '''
             }
         }
