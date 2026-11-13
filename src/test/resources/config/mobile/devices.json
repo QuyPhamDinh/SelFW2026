@@ -1,0 +1,38 @@
+{
+  "devices": {
+    "android-emulator": {
+      "platformName": "Android",
+      "automationName": "UiAutomator2",
+      "deviceName": "Android Emulator",
+      "noReset": true
+    },
+    "android-pixel8": {
+      "platformName": "Android",
+      "automationName": "UiAutomator2",
+      "deviceName": "Pixel_10",
+      "platformVersion": "15",
+      "avd": "Pixel_10",
+      "appPackage": "com.example.myapp",
+      "appActivity": ".MainActivity",
+      "noReset": false
+    },
+    "android-pixel9": {
+      "platformName": "Android",
+      "automationName": "UiAutomator2",
+      "deviceName": "Pixel_9_API_36",
+      "platformVersion": "16",
+      "avd": "Pixel_9_API_36",
+      "appPackage": "com.example.myapp",
+      "appActivity": ".MainActivity",
+      "noReset": false
+    },
+    "ios-iphone16": {
+      "platformName": "iOS",
+      "automationName": "XCUITest",
+      "deviceName": "iPhone 16",
+      "platformVersion": "18.0",
+      "bundleId": "com.example.myapp",
+      "noReset": false
+    }
+  }
+}

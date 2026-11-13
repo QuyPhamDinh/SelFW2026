@@ -3,8 +3,10 @@ package org.example.framework.hooks;
 import io.cucumber.java.After;
 import io.cucumber.java.Before;
 import io.cucumber.java.Scenario;
+import io.qameta.allure.Allure;
 import com.company.framework.ui.driver.DriverFactory;
 import com.company.framework.ui.driver.DriverManager;
+import com.company.framework.mobile.config.Platform;
 import org.openqa.selenium.OutputType;
 import org.openqa.selenium.TakesScreenshot;
 
@@ -24,10 +26,35 @@ public class ScenarioHooks {
         DriverManager.get().manage().window().maximize();
     }
 
+    @Before("@mobile")
+    public void startMobile(Scenario scenario) {
+        Platform platform = Platform.fromTags(scenario.getSourceTagNames());
+        var profile = com.company.framework.mobile.config.MobileConfig.selectedProfile();
+        Allure.parameter("mobile.profile", profile.name());
+        Allure.parameter("mobile.platform", profile.platformName());
+        Allure.parameter("mobile.device", profile.deviceName());
+        Allure.parameter("mobile.platform.version",
+                profile.platformVersion() == null ? "unspecified" : profile.platformVersion());
+        DriverManager.set(DriverFactory.create(platform));
+        DriverManager.get().manage().timeouts()
+                .implicitlyWait(Duration.ZERO);
+    }
+
     @After(value = "@ui", order = 100)
     public void captureFailureAndStopBrowser(Scenario scenario) {
         try {
             if (scenario.isFailed()) {
+                captureScreenshot(scenario);
+            }
+        } finally {
+            DriverManager.quit();
+        }
+    }
+
+    @After(value = "@mobile", order = 100)
+    public void captureMobileFailureAndStopDriver(Scenario scenario) {
+        try {
+            if (scenario.isFailed() && DriverManager.hasDriver()) {
                 captureScreenshot(scenario);
             }
         } finally {

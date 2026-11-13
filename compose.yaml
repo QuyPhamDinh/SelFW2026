@@ -30,10 +30,20 @@ services:
     environment:
       TEST_ENV: "${TEST_ENV:-ci}"
       SELENIUM_REMOTE_URL: "http://selenium:4444"
+      APPIUM_SERVER_URL: "${APPIUM_SERVER_URL:-http://host.docker.internal:4723}"
+      MOBILE_DEVICE_NAME: "${MOBILE_DEVICE_NAME:-}"
+      MOBILE_UDID: "${MOBILE_UDID:-}"
+      MOBILE_PLATFORM_VERSION: "${MOBILE_PLATFORM_VERSION:-}"
+      MOBILE_APP_PATH: "${MOBILE_APP_PATH:-}"
+      ANDROID_APP_PACKAGE: "${ANDROID_APP_PACKAGE:-}"
+      ANDROID_APP_ACTIVITY: "${ANDROID_APP_ACTIVITY:-}"
+      IOS_BUNDLE_ID: "${IOS_BUNDLE_ID:-}"
     command: ["-B", "test", "-Denv=ci", "-Dheadless=true"]
     volumes:
       - ./target:/workspace/target
       - ./allure-results:/workspace/allure-results
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - test-network
 

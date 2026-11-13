@@ -1,6 +1,8 @@
 package com.company.framework.ui.driver;
 
 import com.company.framework.core.config.ConfigManager;
+import com.company.framework.mobile.config.Platform;
+import com.company.framework.mobile.driver.MobileDriverFactory;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
@@ -15,6 +17,17 @@ public final class DriverFactory {
     private DriverFactory() {}
 
     public static WebDriver create() {
+        String configuredPlatform = ConfigManager.optional("execution.platform");
+        Platform platform = configuredPlatform == null || configuredPlatform.isBlank()
+                ? Platform.WEB
+                : Platform.from(configuredPlatform);
+        return create(platform);
+    }
+
+    public static WebDriver create(Platform platform) {
+        if (platform != Platform.WEB) {
+            return MobileDriverFactory.create(platform);
+        }
         String browser = ConfigManager.get("browser").toLowerCase();
         boolean headless = Boolean.parseBoolean(ConfigManager.get("headless"));
         String remote = remoteUrl();

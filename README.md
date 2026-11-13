@@ -122,3 +122,79 @@ After a successful build, open the build page and select **Allure Report** in th
 Environment files are under `src/test/resources/config/`. System properties and environment variables override them; for example, `API_BASE_URL` overrides `api.base.url`. Select Cucumber scenarios with `-Dcucumber.filter.tags`.
 
 Generated build output and Allure results are ignored by `.gitignore`. No Terraform configuration or Terraform commands are part of the active project.
+
+## Mobile automation foundation (Android and iOS)
+
+The framework includes an Appium Java Client 9.2.3 mobile layer compatible with
+the existing Selenium 4.25.0 dependency. `DriverManager` remains the single
+thread-local lifecycle manager; `DriverFactory` now creates WEB, ANDROID, or
+IOS drivers without changing the existing web path.
+
+Configure mobile capabilities in `src/test/resources/config/mobile/devices.json`.
+The `android-pixel8`, `android-pixel9`, and `ios-iphone16` values are illustrative
+placeholders and must be replaced with real device, application, and OS values.
+The `android-emulator` profile is a minimal session profile used by the
+framework smoke test and does not launch an application.
+
+Profiles support `platformName`, `automationName`, `deviceName`,
+`platformVersion`, `udid`, `avd`, `app`, `appPackage`, `appActivity`,
+`bundleId`, `noReset`, `fullReset`, `autoGrantPermissions`, and additional
+`appium:*` capabilities. JSON booleans and numbers remain typed when sent to
+Appium. Do not put credentials or access tokens in this file.
+
+Select a profile with `-Dmobile.device`. Runtime overrides include
+`MOBILE_DEVICE_NAME`, `MOBILE_UDID`, `MOBILE_PLATFORM_VERSION`, `MOBILE_APP`,
+`MOBILE_APP_PACKAGE`, `MOBILE_APP_ACTIVITY`, `IOS_BUNDLE_ID`,
+`MOBILE_NO_RESET`, and `MOBILE_AUTO_GRANT_PERMISSIONS`:
+
+```bash
+APPIUM_SERVER_URL="http://127.0.0.1:4723" \
+mvn -B test -Denv=ci -Dmobile.device=android-pixel8 \
+  '-Dcucumber.filter.tags=@mobile and @android'
+```
+
+Other profile selections are:
+
+```bash
+mvn -B test -Dmobile.device=android-pixel9
+mvn -B test -Dmobile.device=ios-iphone16
+```
+
+The Android session smoke feature only verifies Appium session creation and
+platform identity; it intentionally does not invent application locators. The
+reusable login screen objects require the application's real accessibility IDs
+in the application-specific screen implementation.
+
+For Android, install Appium 2 and the UiAutomator2 driver, start an emulator or
+connect an authorized device, then run the command above. For iOS, Appium must
+run on macOS with Xcode and the XCUITest driver; iOS simulators cannot run in
+the Linux Docker container. A containerized Java runner can connect to a
+macOS-hosted Appium server using a reachable URL such as
+`http://host.docker.internal:4723`.
+
+When using the Docker runner, pass the profile as a Maven property and the
+Appium URL as an environment variable. Compose maps
+`host.docker.internal` to the host gateway:
+
+```bash
+APPIUM_SERVER_URL="http://host.docker.internal:4723" \
+docker compose run --rm --no-deps test-runner \
+  -B test -Denv=ci -Dmobile.device=android-emulator \
+  '-Dcucumber.filter.tags=@mobile and @android'
+```
+
+Useful diagnostics:
+
+```bash
+emulator -list-avds
+adb devices
+xcrun simctl list devices available
+appium driver list --installed
+appium driver doctor uiautomator2
+```
+
+For profiles with `avd` or `udid`, local Android validation checks the
+corresponding emulator or `adb` device before opening a session. These checks
+are skipped for remote Appium hosts. Missing Appium, SDK, Xcode, or device
+prerequisites produce explicit errors; a profile entry alone never means that
+a device is available.
